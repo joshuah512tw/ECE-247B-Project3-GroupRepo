@@ -150,11 +150,11 @@ class SingleHeadAttention(nn.Module):
 
         # ========= TODO : START ========= #
 
-        self.key = ...
-        self.query = ...
-        self.value = ...
-        self.dropout = ...
-        causal_mask = ...
+        self.key = nn.Linear(input_dim, self.output_key_query_dim, bias = False)
+        self.query = nn.Linear(input_dim, self.output_key_query_dim, bias = False)
+        self.value = nn.Linear(input_dim, self.output_value_dim, bias = False)
+        self.dropout = nn.Dropout(p=dropout)
+        causal_mask = torch.triu(torch.ones(max_len, max_len), diagonal=1)  
 
         # ========= TODO : END ========= #
 
@@ -179,8 +179,21 @@ class SingleHeadAttention(nn.Module):
         """
 
         # ========= TODO : START ========= #
+        B, T, D = x.shape
 
-        raise NotImplementedError
+        Q = self.query(x)
+        K = self.key(x)
+        V = self.value(x)
+        dk = Q.shape[-1]
+
+        scores = (Q @ K.transpose(-2, -1)) / (dk ** 0.5)
+        mask = self.causal_mask[:T, :T]
+        scores = scores.masked_fill(mask == 1, float('-inf'))  # mask future positions
+        weights = torch.softmax(scores, dim=-1)
+        weights = self.dropout(weights)
+        out = weights @ V
+
+        return out
 
         # ========= TODO : END ========= #
 
@@ -209,11 +222,18 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
 
         # ========= TODO : START ========= #
-
         # Use setattr to implement the heads dynamically.
-        # self.head_{i} = ...
-        self.out = ...
-        self.dropout = ...
+        head_dim = self.input_dim // self.num_heads
+        for i in range(self.num_heads):
+            setattr(self, f"head_{i}", SingleHeadAttention(
+                self.input_dim,
+                head_dim,
+                head_dim,
+                dropout
+            ))
+
+        self.out = nn.Linear(head_dim * self.num_heads, input_dim, bias = True)
+        self.dropout = nn.Dropout(p=dropout)
 
         # ========= TODO : END ========= #
 
@@ -231,9 +251,17 @@ class MultiHeadAttention(nn.Module):
         """
 
         # ========= TODO : START ========= #
+        head_outputs = []
 
-        raise NotImplementedError
+        for i in range(self.num_heads):
+            head = getattr(self, f"head_{i}")
+            head_outputs.append(head(x))
 
+        multi_att = torch.cat(head_outputs, dim=-1)
+        out = self.out(multi_att)
+        out = self.dropout(out)
+
+        return out
         # ========= TODO : END ========= #
 
 
